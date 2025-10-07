@@ -39,34 +39,29 @@ def login_view(request):
         password = request.POST.get('password')
 
         try:
-            response = supabase.auth.sign_in_with_password({
-                'email': email,
-                'password': password
-            })
-
-            user = response.user
-            session = response.session
-
-            if not user or not session:
-                messages.error(request, "Login failed. Invalid credentials or unverified email.")
+            # Try to get the user from local database
+            try:
+                user = Signup.objects.get(email=email)
+            except Signup.DoesNotExist:
+                messages.error(request, "Invalid email or password.")
                 return redirect('login')
 
-            if user.email_confirmed_at is None:
-                messages.error(request, "Please verify your email before logging in.")
-                return redirect('login')
+            # Check password
+            if user.check_password(password):
+                # Save user session
+                request.session['user_email'] = email
+                request.session['user_id'] = user.id
 
-            # Save Supabase session
-            request.session['access_token'] = session.access_token
-            request.session['user_email'] = email
-
-            if email.endswith('@admin.com'):
-                return redirect('admin_dashboard')
-            
-            elif email.endswith('@staff.com'):
-                return redirect('staff_dashboard')
-            
+                # Redirect based on email domain
+                if email.endswith('@admin.com'):
+                    return redirect('admin_dashboard')
+                elif email.endswith('@staff.com'):
+                    return redirect('staff_dashboard')
+                else:
+                    return redirect('user_dashboard')
             else:
-                return redirect('user_dashboard')
+                messages.error(request, "Invalid email or password.")
+                return redirect('login')
 
         except Exception as e:
             messages.error(request, f"Login error: {str(e)}")
@@ -83,16 +78,18 @@ def sign_up(request):
         password = request.POST.get('password')
 
         try:
-            response = supabase.auth.sign_up({
-                'email': email,
-                'password': password
-            })
-
-            if not response.user:
-                messages.error(request, "Sign up failed. Please try again.")
+            # Check if user already exists
+            if Signup.objects.filter(email=email).exists():
+                messages.error(request, "An account with this email already exists.")
                 return redirect('signup')
 
-            messages.success(request, "Account created! Check your email to verify before logging in.")
+            # Create new user in local database
+            user = Signup.objects.create_user(
+                email=email,
+                password=password
+            )
+            
+            messages.success(request, "Account created successfully! You can now login.")
             return redirect('login')
 
         except Exception as e:
